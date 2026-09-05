@@ -1,0 +1,18 @@
+# 构建产物
+*.app/
+*.icns
+*.iconset/
+
+# geticon.swift 编译出的二进制
+geticon
+
+# macOS
+.DS_Store
+._*
+
+# 临时文件
+*.tmp
+*.orig
+
+# 发布产物
+dist/

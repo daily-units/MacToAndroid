@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Waldron
+#
+# 推 v* 标签就构建、自检、发 Release。不想用 CI 的话删掉这个文件即可，
+# release.sh 在本地一样能跑完全套。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # 标签和 build.sh 里的 VERSION 对不上就直接失败：
+      # release.sh 是按 VERSION 命名产物的，不一致会发出一个名字对不上标签的包
+      - name: 核对标签与版本号
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' build.sh | head -1)"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "标签 v$TAG 与 build.sh 里的 VERSION=$VERSION 不一致" >&2
+            exit 1
+          fi
+
+      - name: 构建并打包
+        run: ./release.sh
+
+      # cask 必须跟着 zip 一起出去。它里面的 sha256 算的是**这次 CI 构建的那个 zip**，
+      # 而 runner 的 Xcode 版本和本机未必一致，二进制不同、sha256 就不同——
+      # 事后在本地重跑 release.sh 得到的 cask 配不上 Release 上挂的包，
+      # 用户 brew install 时直接卡在校验失败上。所以不能只留在 runner 里。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacToAndroid
+          path: |
+            dist/MacToAndroid-*.zip
+            dist/mactoandroid.rb
+
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/MacToAndroid-$V.zip" "dist/mactoandroid.rb" \
+            --title "MacToAndroid $V" --notes-file dist/RELEASE-NOTES.md
